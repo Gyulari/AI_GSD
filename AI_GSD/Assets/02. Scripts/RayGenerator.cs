@@ -5,93 +5,113 @@ using UnityEngine;
 public class RayGenerator : MonoBehaviour
 {
     [SerializeField]
-    private ParticleSystem ShootingSystem;
+    private Transform RayGeneratePoint;    // Ray가 Generate되는 위치
     [SerializeField]
-    private Transform BulletSpawnPoint;
+    private TrailRenderer RayTrail;
     [SerializeField]
-    private ParticleSystem ImpactParticleSystem;
+    private float GenerateDelay = 0.5f;
     [SerializeField]
-    private TrailRenderer BulletTrail;
+    private float Speed = 10.0f;
     [SerializeField]
-    private float ShootDelay = 0.1f;
-    [SerializeField]
-    private float Speed = 100;
-    [SerializeField]
-    private LayerMask Mask;
-    [SerializeField]
-    private bool BouncingBullets;
-    [SerializeField]
-    private float BounceDistance = 10f;
+    private float ReflectingDistance = 100f;
 
-    private float LastShootTime;
+    private float LastGenerateTime;
+    private float LastReflectingDistance = 0;
 
+    // Ray 생성 함수
     public void RayGenerate()
     {
-        if(LastShootTime + ShootDelay < Time.time)
-        {
-            ShootingSystem.Play();
+        if(LastGenerateTime + GenerateDelay < Time.time) {
+            Vector3 direction = Camera.main.ScreenToWorldPoint(new Vector3(Input.mousePosition.x, Input.mousePosition.y, -Camera.main.transform.position.z)) - RayGeneratePoint.transform.position;    // Ray 발사 방향 결정
+            TrailRenderer trail = Instantiate(RayTrail, RayGeneratePoint.position, Quaternion.identity);    // Trail Renderer 생성
 
-            Vector3 direction = transform.forward;
-            TrailRenderer trail = Instantiate(BulletTrail, BulletSpawnPoint.position, Quaternion.identity);
+            // 발사된 Ray가 충돌체를 감지
+            if (Physics.Raycast(RayGeneratePoint.position, direction, out RaycastHit hit, float.MaxValue))
+                StartCoroutine(GenerateTrail(trail, hit.point, hit.normal, ReflectingDistance, true));    // Trail Generate
 
-            if(Physics.Raycast(BulletSpawnPoint.position, direction, out RaycastHit hit, float.MaxValue, Mask))
-            {
-                StartCoroutine(SpawnTrail(trail, hit.point, hit.normal, BounceDistance, true));
-            }
-            else
-            {
-                StartCoroutine(SpawnTrail(trail, direction * 100, Vector3.zero, BounceDistance, false));
-            }
+            else {
+                // 발사된 Ray가 충돌하지 못하는 상황에선 일정 거리 진행 후 소멸
+                StartCoroutine(GenerateTrail(trail, direction * 10, Vector3.zero, ReflectingDistance, false));
+            }    
 
-            LastShootTime = Time.time;
+            LastGenerateTime = Time.time;
         }
     }
 
-    private IEnumerator SpawnTrail(TrailRenderer Trail, Vector3 HitPoint, Vector3 HitNormal, float BounceDistance, bool MadeImpact)
+    // Trail 생성 함수
+    private IEnumerator GenerateTrail(TrailRenderer Trail, Vector3 ReflectingPoint, Vector3 ReflectingNormal, float ReflectingDistance, bool MadeImpact)
     {
+        float distance;    // Ray가 진행 할 남은 거리
+        float startingDistance;    // Ray가 진행 할 전체 거리
+        
         Vector3 startPosition = Trail.transform.position;
-        Vector3 direction = (HitPoint - Trail.transform.position).normalized;
+        Vector3 direction = (ReflectingPoint - Trail.transform.position).normalized;    // Ray의 반사 지점으로의 Direction Vector 연산
+        
+        // 마지막 반사 과정 (ReflectingDistance를 모두 소진한 경우)
+        if(ReflectingDistance <= 0) {
+            // 최대 LastReflectingDistance까지만 진행 가능
+            distance = LastReflectingDistance;
+            startingDistance = distance;
+            
+            ReflectingPoint = Vector3.Lerp(startPosition, ReflectingPoint, LastReflectingDistance / Vector3.Distance(startPosition, ReflectingPoint));    // LastReflectingDistance까지만 진행 할 때의 ReflectingPoint 연산
+        }
+        
+        // 마지막을 제외한 반사 과정
+        else {
+            // Ray의 반사 지점까지의 거리 연산
+            distance = Vector3.Distance(Trail.transform.position, ReflectingPoint);
+            startingDistance = distance;
+        }
 
-        float distance = Vector3.Distance(Trail.transform.position, HitPoint);
-        float startingDistance = distance;
-
-        while(distance > 0)
-        {
-            Trail.transform.position = Vector3.Lerp(startPosition, HitPoint, 1 - (distance / startingDistance));
+        // 반사 지점으로 이동
+        while(distance > 0) {
+            Trail.transform.position = Vector3.Lerp(startPosition, ReflectingPoint, 1 - (distance / startingDistance));
             distance -= Time.deltaTime * Speed;
 
             yield return null;
         }
 
-        Trail.transform.position = HitPoint;
+        Trail.transform.position = ReflectingPoint;
 
+        // 반사
         if(MadeImpact)
         {
-            Instantiate(ImpactParticleSystem, HitPoint, Quaternion.LookRotation(HitNormal));
-
-            if(BouncingBullets && BounceDistance > 0)
+            // Ray가 진행 하면서 소모하는 ReflectingDistance가 남아 있는 경우
+            if(ReflectingDistance > 0)
             {
-                Vector3 bounceDirection = Vector3.Reflect(direction, HitNormal);
+                // 반사 이후의 Direction Vector 연산
+                Vector3 ReflectingDirection = Vector3.Reflect(direction, ReflectingNormal);
 
-                if(Physics.Raycast(HitPoint, bounceDirection, out RaycastHit hit, BounceDistance, Mask))
+                // 남아 있는 ReflectingDistance로 다음 반사 지점까지 도달 할 수 있는 경우
+                if (Physics.Raycast(ReflectingPoint, ReflectingDirection, out RaycastHit hit, ReflectingDistance))
                 {
-                    yield return StartCoroutine(SpawnTrail(
+                    yield return StartCoroutine(GenerateTrail(
                         Trail,
                         hit.point,
                         hit.normal,
-                        BounceDistance - Vector3.Distance(hit.point, HitPoint),
+                        ReflectingDistance - Vector3.Distance(hit.point, ReflectingPoint),
                         true
                     ));
                 }
+
                 else
                 {
-                    yield return StartCoroutine(SpawnTrail(
-                        Trail,
-                        bounceDirection * BounceDistance,
-                        Vector3.zero,
-                        0,
-                        false
-                    ));
+                    // Last ReflectingPoint를 연산하기 위한 Raycast
+                    if (Physics.Raycast(ReflectingPoint, ReflectingDirection, out RaycastHit lastHit, float.MaxValue)) {
+                        LastReflectingDistance = ReflectingDistance;
+
+                        yield return StartCoroutine(GenerateTrail(
+                            Trail,
+                            lastHit.point,
+                            Vector3.zero,
+                            0,    // LastReflectingDistance에 최종 잔여 ReflectingDistance를 저장하고, 마지막 반사 과정임을 알리기 위해 인자로 0을 전달
+                            false
+                        ));
+                    }
+
+                    // 반사 이후 도달할 ReflectingPoint가 없는 경우 [예외 처리]
+                    else
+                        Destroy(Trail.gameObject, Trail.time);
                 }
             }
         }

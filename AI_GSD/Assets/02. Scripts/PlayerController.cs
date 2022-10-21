@@ -8,14 +8,13 @@ public class PlayerController : MonoBehaviour
 
     void Start()
     {
-        rayGenerator = GameObject.Find("Gun").GetComponent<RayGenerator>();
+        rayGenerator = GameObject.Find("RayGenerator").GetComponent<RayGenerator>();
     }
 
     void Update()
     {
-        if (Input.GetKey(KeyCode.Space))
+        if (Input.GetMouseButton(0))
         {
-            Debug.Log("Shoot");
             rayGenerator.RayGenerate();
         }
     }
