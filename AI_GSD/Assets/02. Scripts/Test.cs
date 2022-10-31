@@ -10,7 +10,7 @@ public class Test : MonoBehaviour
     void Start()
     {
         rb = GetComponent<Rigidbody2D>();
-        rb.AddForce(transform.up * 10.0f, ForceMode2D.Impulse);
+        rb.AddForce(transform.up * 50.0f, ForceMode2D.Impulse);
     }
 
     // Update is called once per frame
